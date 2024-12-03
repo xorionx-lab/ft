@@ -1,174 +1,193 @@
-import os
-import flet as ft
-from db import session, Aluno, Relatorio
-from datetime import datetime
+from kivy.app import App
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.textinput import TextInput
+from kivy.uix.button import Button
+from kivy.uix.gridlayout import GridLayout
+from kivy.uix.label import Label
+from kivy.uix.scrollview import ScrollView
 import openpyxl
+from openpyxl.utils import get_column_letter
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from kivy.core.window import Window
+from datetime import datetime
+from kivy.core.window import Window
 
-def main(page: ft.Page):
-    page.title = "Gerenciamento de Alunos e Relatórios"
-    page.scroll = "auto"
+Window.size = (Window.width, Window.height)
+Window.size = (1920, 1080)
 
-    # Campos de entrada para alunos
-    nome = ft.TextField(label="Nome: ")
-    serie = ft.TextField(label="Série: ")
-    turma = ft.TextField(label="Turma:")
-    turno = ft.TextField(label="Turno: ")
-    data_atendimento = ft.TextField(label="Data de Atendimento (dd/mm/yyyy): ")
-    data_reuniao = ft.TextField(label="Data de Reunião (dd/mm/yyyy): ")
-    demanda = ft.TextField(label="Demanda: ")
-    suporte = ft.TextField(label="Suporte: ")
-    retorno = ft.TextField(label="Retorno: ")
-    horario_atendimento = ft.TextField(label="Horário de Atendimento: ")
-    resolucao = ft.TextField(label="Resolução da Demanda: ")
+Base = declarative_base()
 
-    # Campos de entrada para relatórios
-    aluno_id = ft.TextField(label="ID do Aluno: ")
-    data_solicitacao = ft.TextField(label="Data da Solicitação (dd/mm/yyyy): ")
-    data_entrega = ft.TextField(label="Data da Entrega (dd/mm/yyyy): ")
-    profissional_solicitante = ft.TextField(label="Profissional Solicitante: ")
-    entregue = ft.Checkbox(label="Entregue", value=False)
+# Configuração do banco de dados
+engine = create_engine("sqlite:///alunos.db", echo=True)
+Session = sessionmaker(bind=engine)
+session = Session()
 
-    # Tabelas para exibir os dados
-    tabela_alunos = ft.DataTable(
-        columns=[
-            ft.DataColumn(ft.Text("ID")),
-            ft.DataColumn(ft.Text("Nome")),
-            ft.DataColumn(ft.Text("Série")),
-            ft.DataColumn(ft.Text("Turma")),
-            ft.DataColumn(ft.Text("Turno")),
-            ft.DataColumn(ft.Text("Data Atendimento")),
-            ft.DataColumn(ft.Text("Data Reunião")),
-            ft.DataColumn(ft.Text("Ações")),
-        ],
-        rows=[],
+# Modelos
+class Aluno(Base):
+    __tablename__ = "alunos"
+    id = Column(Integer, primary_key=True)
+    nome = Column(String)
+    serie = Column(String)
+    turma = Column(String)
+    turno = Column(String)
+    data_atendimento = Column(DateTime, nullable=True)
+    data_reuniao = Column(DateTime, nullable=True)
+    demanda = Column(String)
+    suporte = Column(String)
+    retorno = Column(String)
+    horario_atendimento = Column(String)
+    resolucao = Column(String)
+
+class Relatorio(Base):
+    __tablename__ = "relatorios"
+    id = Column(Integer, primary_key=True)
+    aluno_id = Column(Integer)
+    data_solicitacao = Column(DateTime, nullable=False)
+    data_entrega = Column(DateTime, nullable=True)
+    profissional_solicitante = Column(String)
+    entregue = Column(Boolean, default=False)
+
+# Cria as tabelas no banco de dados
+Base.metadata.create_all(engine)
+
+# Função para gerar planilha de alunos
+def gerar_planilha():
+    wb = openpyxl.Workbook()
+    sheet = wb.active
+    sheet.title = "Alunos"
+
+    # Cabeçalhos da planilha
+    headers = ["ID", "Nome", "Série", "Turma", "Turno", "Data Atendimento", "Data Reunião", "Demanda", "Suporte", "Retorno", "Horário Atendimento", "Resolução"]
+    for col_num, header in enumerate(headers, 1):
+        col_letter = get_column_letter(col_num)
+        sheet[f"{col_letter}1"] = header
+
+    # Preencher a planilha com os dados dos alunos
+    alunos = session.query(Aluno).all()
+    for row_num, aluno in enumerate(alunos, 2):
+        sheet[f"A{row_num}"] = aluno.id
+        sheet[f"B{row_num}"] = aluno.nome
+        sheet[f"C{row_num}"] = aluno.serie
+        sheet[f"D{row_num}"] = aluno.turma
+        sheet[f"E{row_num}"] = aluno.turno
+        sheet[f"F{row_num}"] = aluno.data_atendimento.strftime("%d/%m/%Y") if aluno.data_atendimento else ""
+        sheet[f"G{row_num}"] = aluno.data_reuniao.strftime("%d/%m/%Y") if aluno.data_reuniao else ""
+        sheet[f"H{row_num}"] = aluno.demanda
+        sheet[f"I{row_num}"] = aluno.suporte
+        sheet[f"J{row_num}"] = aluno.retorno
+        sheet[f"K{row_num}"] = aluno.horario_atendimento
+        sheet[f"L{row_num}"] = aluno.resolucao
+
+    # Salvar a planilha
+    wb.save("alunos.xlsx")
+    print("Planilha gerada com sucesso!")
+
+# Função para adicionar aluno
+def adicionar_aluno(nome, serie, turma, turno, data_atendimento, data_reuniao, demanda, suporte, retorno, horario_atendimento, resolucao):
+    # Convertendo as datas de string para datetime
+    try:
+        data_atendimento = datetime.strptime(data_atendimento, "%d/%m/%Y").date() if data_atendimento else None
+        data_reuniao = datetime.strptime(data_reuniao, "%d/%m/%Y").date() if data_reuniao else None
+    except ValueError:
+        print("Formato de data inválido!")
+        return
+
+    aluno = Aluno(
+        nome=nome,
+        serie=serie,
+        turma=turma,
+        turno=turno,
+        data_atendimento=data_atendimento,
+        data_reuniao=data_reuniao,
+        demanda=demanda,
+        suporte=suporte,
+        retorno=retorno,
+        horario_atendimento=horario_atendimento,
+        resolucao=resolucao
     )
+    session.add(aluno)
+    session.commit()
 
-    tabela_relat = ft.DataTable(
-        columns=[
-            ft.DataColumn(ft.Text("ID")),
-            ft.DataColumn(ft.Text("ID Aluno")),
-            ft.DataColumn(ft.Text("Data Solicitação")),
-            ft.DataColumn(ft.Text("Data Entrega")),
-            ft.DataColumn(ft.Text("Profissional Solicitante")),
-            ft.DataColumn(ft.Text("Entregue")),
-            ft.DataColumn(ft.Text("Ações")),
-        ],
-        rows=[],
-    )
+# Interface do Kivy
+class AlunoApp(App):
+    def build(self):
+        self.layout = BoxLayout(orientation='vertical')
 
-    # Função para adicionar aluno
-    def adicionar_aluno(e):
-        try:
-            aluno = Aluno(
-                nome=nome.value,
-                serie=serie.value,
-                turma=turma.value,
-                turno=turno.value,
-                data_atendimento=datetime.strptime(data_atendimento.value, "%d/%m/%Y") if data_atendimento.value else None,
-                data_reuniao=datetime.strptime(data_reuniao.value, "%d/%m/%Y") if data_reuniao.value else None,
-                demanda=demanda.value,
-                suporte=suporte.value,
-                retorno=retorno.value,
-                horario_atendimento=horario_atendimento.value,
-                resolucao=resolucao.value,
-            )
-            session.add(aluno)
-            session.commit()
-            carregar_alunos()
-            limpar_campos()
-        except ValueError:
-            page.dialog = ft.AlertDialog(title="Erro", content=ft.Text("Formato de data inválido! Use o formato dd/mm/yyyy"))
-            page.dialog.open = True
-            page.update()
+        # Campos de entrada
+        self.nome_input = TextInput(hint_text="Nome", multiline=False)
+        self.serie_input = TextInput(hint_text="Série", multiline=False)
+        self.turma_input = TextInput(hint_text="Turma", multiline=False)
+        self.turno_input = TextInput(hint_text="Turno", multiline=False)
+        self.data_atendimento_input = TextInput(hint_text="Data Atendimento (DD/MM/AAAA)", multiline=False)
+        self.data_reuniao_input = TextInput(hint_text="Data Reunião (DD/MM/AAAA)", multiline=False)
+        self.demanda_input = TextInput(hint_text="Demanda", multiline=False)
+        self.suporte_input = TextInput(hint_text="Suporte", multiline=False)
+        self.retorno_input = TextInput(hint_text="Retorno", multiline=False)
+        self.horario_atendimento_input = TextInput(hint_text="Horário Atendimento", multiline=False)
+        self.resolucao_input = TextInput(hint_text="Resolução", multiline=False)
 
-    # Função para editar aluno
-    def editar_aluno(aluno_id):
-        aluno = session.query(Aluno).filter_by(id=aluno_id).first()
-        if aluno:
-            nome.value = aluno.nome
-            serie.value = aluno.serie
-            turma.value = aluno.turma
-            turno.value = aluno.turno
-            data_atendimento.value = aluno.data_atendimento.strftime("%d/%m/%Y") if aluno.data_atendimento else ""
-            data_reuniao.value = aluno.data_reuniao.strftime("%d/%m/%Y") if aluno.data_reuniao else ""
-            demanda.value = aluno.demanda
-            suporte.value = aluno.suporte
-            retorno.value = aluno.retorno
-            horario_atendimento.value = aluno.horario_atendimento
-            resolucao.value = aluno.resolucao
+        # Botões
+        self.salvar_button = Button(text="Salvar Aluno", on_press=self.salvar_aluno)
+        self.gerar_planilha_button = Button(text="Gerar Planilha", on_press=self.gerar_planilha)
 
-            def salvar_edicao(e):
-                aluno.nome = nome.value
-                aluno.serie = serie.value
-                aluno.turma = turma.value
-                aluno.turno = turno.value
-                aluno.data_atendimento = datetime.strptime(data_atendimento.value, "%d/%m/%Y") if data_atendimento.value else None
-                aluno.data_reuniao = datetime.strptime(data_reuniao.value, "%d/%m/%Y") if data_reuniao.value else None
-                aluno.demanda = demanda.value
-                aluno.suporte = suporte.value
-                aluno.retorno = retorno.value
-                aluno.horario_atendimento = horario_atendimento.value
-                aluno.resolucao = resolucao.value
-                session.commit()
-                carregar_alunos()
-                limpar_campos()
+        # Tabela de alunos
+        self.tabela_layout = GridLayout(cols=1, size_hint_y=None)
+        self.tabela_layout.bind(minimum_height=self.tabela_layout.setter('height'))
 
-            page.dialog = ft.AlertDialog(
-                title=ft.Text("Editar Aluno"),
-                content=ft.Column([nome, serie, turma, turno, data_atendimento, data_reuniao, demanda, suporte, retorno, horario_atendimento, resolucao]),
-                actions=[ft.ElevatedButton("Salvar", on_click=salvar_edicao)],
-            )
-            page.dialog.open = True
-            page.update()
+        scroll_view = ScrollView(size_hint=(1, None), size=(Window.width, Window.height))
+        scroll_view.add_widget(self.tabela_layout)
 
-    # Função para excluir aluno
-    def excluir_aluno(aluno_id):
-        aluno = session.query(Aluno).filter_by(id=aluno_id).first()
-        if aluno:
-            session.delete(aluno)
-            session.commit()
-            carregar_alunos()
+        # Adicionar widgets ao layout
+        self.layout.add_widget(self.nome_input)
+        self.layout.add_widget(self.serie_input)
+        self.layout.add_widget(self.turma_input)
+        self.layout.add_widget(self.turno_input)
+        self.layout.add_widget(self.data_atendimento_input)
+        self.layout.add_widget(self.data_reuniao_input)
+        self.layout.add_widget(self.demanda_input)
+        self.layout.add_widget(self.suporte_input)
+        self.layout.add_widget(self.retorno_input)
+        self.layout.add_widget(self.horario_atendimento_input)
+        self.layout.add_widget(self.resolucao_input)
+        self.layout.add_widget(self.salvar_button)
+        self.layout.add_widget(self.gerar_planilha_button)
+        self.layout.add_widget(scroll_view)
 
-    # Função para carregar alunos
-    def carregar_alunos():
-        tabela_alunos.rows.clear()
+        self.carregar_alunos()
+        return self.layout
+
+    def salvar_aluno(self, instance):
+        nome = self.nome_input.text
+        serie = self.serie_input.text
+        turma = self.turma_input.text
+        turno = self.turno_input.text
+        data_atendimento = self.data_atendimento_input.text
+        data_reuniao = self.data_reuniao_input.text
+        demanda = self.demanda_input.text
+        suporte = self.suporte_input.text
+        retorno = self.retorno_input.text
+        horario_atendimento = self.horario_atendimento_input.text
+        resolucao = self.resolucao_input.text
+
+        adicionar_aluno(nome, serie, turma, turno, data_atendimento, data_reuniao, demanda, suporte, retorno, horario_atendimento, resolucao)
+        self.carregar_alunos()
+
+    def carregar_alunos(self):
+        self.tabela_layout.clear_widgets()
         alunos = session.query(Aluno).all()
         for aluno in alunos:
-            tabela_alunos.rows.append(ft.DataRow(
-                cells=[
-                    ft.DataCell(ft.Text(str(aluno.id))),
-                    ft.DataCell(ft.Text(aluno.nome)),
-                    ft.DataCell(ft.Text(aluno.serie)),
-                    ft.DataCell(ft.Text(aluno.turma)),
-                    ft.DataCell(ft.Text(aluno.turno)),
-                    ft.DataCell(ft.Text(aluno.data_atendimento.strftime("%d/%m/%Y") if aluno.data_atendimento else "")),
-                    ft.DataCell(ft.Text(aluno.data_reuniao.strftime("%d/%m/%Y") if aluno.data_reuniao else "")),
-                    ft.DataCell(ft.Row([
-                        ft.IconButton(icon=ft.icons.EDIT, on_click=lambda e, aluno_id=aluno.id: editar_aluno(aluno_id)),
-                        ft.IconButton(icon=ft.icons.DELETE, on_click=lambda e, aluno_id=aluno.id: excluir_aluno(aluno_id)),
-                    ])),
-                ]
-            ))
-        page.update()
+            row = BoxLayout(size_hint_y=None, height=40)
+            row.add_widget(Label(text=str(aluno.id)))
+            row.add_widget(Label(text=aluno.nome))
+            row.add_widget(Label(text=aluno.serie))
+            row.add_widget(Label(text=aluno.turma))
+            row.add_widget(Label(text=aluno.turno))
+            self.tabela_layout.add_widget(row)
 
-    # Função para limpar campos
-    def limpar_campos():
-        nome.value = serie.value = turma.value = turno.value = ""
-        data_atendimento.value = data_reuniao.value = demanda.value = ""
-        suporte.value = retorno.value = horario_atendimento.value = resolucao.value = ""
-        aluno_id.value = data_solicitacao.value = data_entrega.value = profissional_solicitante.value = ""
-        entregue.value = False
-        page.update()
+    def gerar_planilha(self, instance):
+        gerar_planilha()
 
-    # Estrutura da página
-    guia_alunos = ft.Column([
-        ft.Text("Gerenciamento de Alunos", size=20),
-        nome, serie, turma, turno, data_atendimento, data_reuniao, demanda, suporte, retorno, horario_atendimento, resolucao,
-        ft.ElevatedButton("Salvar Aluno", on_click=adicionar_aluno),
-        tabela_alunos
-    ])
-
-    page.add(guia_alunos)
-    carregar_alunos()
-
-ft.app(target=main)
+if __name__ == '__main__':
+    AlunoApp().run()
